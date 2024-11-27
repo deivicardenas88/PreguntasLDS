@@ -3,7 +3,7 @@ import pandas as pd
 import os
 from datetime import datetime
 import streamlit as st
-from rapidfuzz import fuzz
+
 
 # =================================
 # 2. Cargar balotario a diccionario
@@ -503,9 +503,6 @@ def procesar_respuesta(respuesta_usuario, nombre, respuesta_opcion=None):
     es_correcta = False
     if pregunta["tipo"] == "cerrada" and respuesta_usuario in estado_quizz_por_participante[nombre]["opciones_actuales"]:
         es_correcta = respuesta_usuario == respuesta_correcta
-    elif pregunta["tipo"] == "abierta":
-        similitud = fuzz.ratio(respuesta_usuario.lower(), respuesta_correcta.lower())
-        es_correcta = similitud >= UMBRAL_SIMILITUD
 
     # Guardar la respuesta del usuario en memoria, pero NO en el CSV aún
     estado_quizz_por_participante[nombre]["respuestas_usuario"].append({
@@ -593,3 +590,4 @@ if nombre:
     # Finalizar el test
     if st.button("Finalizar Quiz"):
         st.write(finalizar_quizz(nombre))
+        
