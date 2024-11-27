@@ -3,10 +3,7 @@ import pandas as pd
 import os
 from datetime import datetime
 import streamlit as st
-import tkinter as tk
-from tkinter import filedialog
 from rapidfuzz import fuzz
-
 
 # =================================
 # 2. Cargar balotario a diccionario
@@ -441,9 +438,31 @@ preguntas_y_respuestas = [
      "tipo": "cerrada"}
 ]
 
-
 # Convertir la lista a un DataFrame
 df_preguntas_y_respuestas = pd.DataFrame(preguntas_y_respuestas)
+
+
+
+# Función para limpiar la lista global de resultados antes de iniciar un nuevo test
+def limpiar_resultados_globales():
+    global todos_los_resultados
+    todos_los_resultados = []  # Limpiar la lista antes de agregar nuevos resultados
+    print("Lista de resultados globales limpiada.")
+
+# Función para iniciar el quizz
+def inicializar_quizz(nombre):
+    # Crear un estado nuevo para el participante si no existe
+    estado_quizz_por_participante[nombre] = {
+        "participante": nombre,
+        "preguntas": random.sample(preguntas_y_respuestas, 10),  # Seleccionar 10 preguntas aleatorias sin repeticiones
+        "indice_actual": 0,
+        "puntaje": 0,
+        "respuestas_usuario": [],
+        "opciones_actuales": [],  # Reiniciar opciones actuales
+    }
+    # Mostrar la primera pregunta
+    return mostrar_pregunta(nombre)
+
 
 # Diccionario global para almacenar el estado de cada participante
 estado_quizz_por_participante = {}
@@ -451,32 +470,24 @@ estado_quizz_por_participante = {}
 # Umbral de similitud para preguntas abiertas
 UMBRAL_SIMILITUD = 50  # Ajustable según la tolerancia deseada
 
-# Función para iniciar el quizz
-def inicializar_quizz(nombre):
-    if nombre not in estado_quizz_por_participante:
-        estado_quizz_por_participante[nombre] = {
-            "participante": nombre,
-            "preguntas": random.sample(preguntas_y_respuestas, 10),  # Seleccionar 10 preguntas aleatorias sin repeticiones
-            "indice_actual": 0,
-            "puntaje": 0,
-            "respuestas_usuario": [],
-            "opciones_actuales": [],  # Reiniciar opciones actuales
-        }
-    return mostrar_pregunta(nombre)
+
 
 # Función para mostrar una pregunta
 def mostrar_pregunta(nombre):
-    estado_quizz = estado_quizz_por_participante[nombre]
+    estado_quizz = estado_quizz_por_participante[nombre]  # Obtener el estado del participante
     indice = estado_quizz["indice_actual"]
-    if indice < len(estado_quizz["preguntas"]):
+    if indice < len(estado_quizz["preguntas"]):  # Verificar si quedan preguntas por mostrar
         pregunta = estado_quizz["preguntas"][indice]
+
+        # Numeración de la pregunta
         numero_pregunta = f"Pregunta {indice + 1}: "  # Numerar preguntas desde 1
 
         if pregunta["tipo"] == "cerrada":
             opciones = random.sample(pregunta["opciones"], len(pregunta["opciones"]))  # Desordenar opciones
             estado_quizz["opciones_actuales"] = opciones  # Guardar opciones desordenadas
+            # Mostrar las opciones
             return numero_pregunta + pregunta["pregunta"], opciones
-        else:
+        else:  # Pregunta abierta
             return numero_pregunta + pregunta["pregunta"], None
     else:
         return mostrar_puntaje_final(nombre)
@@ -488,6 +499,7 @@ def procesar_respuesta(respuesta_usuario, nombre, respuesta_opcion=None):
     respuesta_correcta = pregunta["respuesta"]
     respuesta_usuario = respuesta_opcion if pregunta["tipo"] == "cerrada" else respuesta_usuario.strip()
 
+    # Validar respuesta según tipo
     es_correcta = False
     if pregunta["tipo"] == "cerrada" and respuesta_usuario in estado_quizz_por_participante[nombre]["opciones_actuales"]:
         es_correcta = respuesta_usuario == respuesta_correcta
@@ -495,7 +507,7 @@ def procesar_respuesta(respuesta_usuario, nombre, respuesta_opcion=None):
         similitud = fuzz.ratio(respuesta_usuario.lower(), respuesta_correcta.lower())
         es_correcta = similitud >= UMBRAL_SIMILITUD
 
-    # Guardar la respuesta del usuario
+    # Guardar la respuesta del usuario en memoria, pero NO en el CSV aún
     estado_quizz_por_participante[nombre]["respuestas_usuario"].append({
         "participante": nombre,
         "pregunta": pregunta["pregunta"],
@@ -516,14 +528,15 @@ def procesar_respuesta(respuesta_usuario, nombre, respuesta_opcion=None):
 # Función para finalizar el quiz y mostrar el puntaje
 def finalizar_quizz(nombre):
     # Llamamos a la función para guardar las respuestas solo cuando se finaliza el quiz
-    resultados_csv = guardar_resultados(nombre)
+    guardar_resultados(nombre)
 
-    return mostrar_puntaje_final(nombre), resultados_csv
+    return mostrar_puntaje_final(nombre)
 
 # Función para mostrar el puntaje final con detalle de respuestas correctas e incorrectas
 def mostrar_puntaje_final(nombre):
     estado_quizz = estado_quizz_por_participante[nombre]  # Obtener el estado del participante
 
+    # Generar el desglose de aciertos y errores
     resultados_detalle = []
     for respuesta in estado_quizz["respuestas_usuario"]:
         acierto = "Correcta" if respuesta["correcta"] else "Incorrecta"
@@ -535,8 +548,11 @@ def mostrar_puntaje_final(nombre):
 
 # Función para guardar resultados en un archivo CSV
 def guardar_resultados(nombre):
+    # Añadir las respuestas del participante actual a la lista global
     estado_quizz = estado_quizz_por_participante[nombre]
-    fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Obtener la fecha actual
+    fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Formato de fecha y hora: 2024-11-26 14:30:00
 
     # Crear el DataFrame con todas las respuestas del participante actual
     df = pd.DataFrame(estado_quizz["respuestas_usuario"])
@@ -544,11 +560,12 @@ def guardar_resultados(nombre):
     # Añadir la columna de fecha
     df['fecha_respuesta'] = fecha_actual
 
-    # Crear un archivo CSV en el directorio actual
-    archivo_guardar = f"resultados_{nombre}_{fecha_actual}.csv"
-    df.to_csv(archivo_guardar, index=False)
+    # Verificar si el archivo CSV ya existe
+    archivo_csv = "resultados.csv"
+    file_exists = os.path.exists(archivo_csv)
 
-    return archivo_guardar
+    # Guardar las respuestas en el archivo CSV (si el archivo no existe, agrega encabezado)
+    df.to_csv(archivo_csv, mode='a', header=not file_exists, index=False)
 
 # Interfaz en Streamlit
 st.title("Cuestionario Sistema de Gestión Anti Soborno")
@@ -557,28 +574,22 @@ st.title("Cuestionario Sistema de Gestión Anti Soborno")
 nombre = st.text_input("Ingrese su nombre:")
 
 if nombre:
+    # Inicializar el cuestionario si no está inicializado
     if nombre not in estado_quizz_por_participante:
+        st.session_state.iniciar = True
         pregunta, opciones = inicializar_quizz(nombre)
         st.write(pregunta)
 
         if opciones:
             respuesta_usuario = st.radio("Opciones:", opciones)
             if st.button("Responder"):
-                procesar_respuesta(respuesta_usuario, nombre, respuesta_opcion=respuesta_usuario)
+                procesar_respuesta(respuesta_usuario, nombre, respuesta_usuario)
 
         else:
             respuesta_usuario = st.text_input("Escribe tu respuesta")
             if st.button("Responder"):
                 procesar_respuesta(respuesta_usuario, nombre)
 
+    # Finalizar el test
     if st.button("Finalizar Quiz"):
-        resultado, archivo_csv = finalizar_quizz(nombre)
-        st.write(resultado)
-
-        # Botón para descargar los resultados CSV
-        st.download_button(
-            label="Descargar resultados",
-            data=open(archivo_csv, "rb").read(),
-            file_name=archivo_csv,
-            mime="text/csv"
-        )
+        st.write(finalizar_quizz(nombre))
